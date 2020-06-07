@@ -91,7 +91,7 @@ function fetch(url, opt) {
 function fetchJson(url, opt) {
     if(opt == null) opt = {};
     opt.headers = {'User-Agent': UAs[Math.floor(Math.random() * Math.floor(UAs.length))]};
-    return node_fetch(url,opt).then(res => res.json());
+    return node_fetch(url,opt).then(res => res.ok ? res.json() : null);
   }
   
 //////////////////////////////////////////////////////////////////////////////////////
@@ -211,7 +211,7 @@ function promiseToFetchNoaaBuoy(id) {
 const BoonUrl = "https://boonproducts.ucdavis.edu/cgi-bin/dyn.pl?source=brt2&names=aqm_aqi,aqm_co2_conc_num,bml_met_air_temperature_degf,bml_met_air_temperature_degc,bml_met_wind_speed_mph,bml_met_wind_speed_kts,bml_met_wind_direction_degn,bml_met_barometric_pressure_mbar,bml_met_barometric_pressure_inhg,bml_met_relative_humidity_percent,bml_met_par_units,bml_met_solar_radiation_wpsqm,bml_met_rainfall_lasthour,bml_met_rainfall_last24hours,bml_met_rainfall_last7days,bml_met_rainfall_last30days,bml_met_rainfall_ytd,bml_met_rainfall_sincejul,bml_met_rainfall_sinceoct,bml_met_rainfall_last48hours,bml_met_rainfall_lasthour_percent,bml_met_rainfall_last24hours_percent,bml_met_rainfall_last48hours_percent,bml_met_rainfall_last7days_percent,bml_met_rainfall_last30days_percent,bml_met_rainfall_ytd_percent,bml_met_rainfall_sincejul_percent,bml_met_rainfall_sinceoct_percent,bml_ctd_temperature_degf,bml_ctd_temperature_degc,bml_ctd_salinity_ppt,bml_ctd_density_gpcc,bml_ctd_conductivity_spm,bml_wwqm_temperature_degf,bml_wwqm_temperature_degc,bml_wwqm_salinity_ppt,bml_wwqm_chlorophyll_ugpl,bml_wwqm_oxygen_saturation_units,bml_wwqm_dissolved_oxygen_units,bml_wwqm_turbidity_ntu,bml_wwqm_conductivity_spm,bml_wwqm_water_pressure_dbar,tbb_ctd_temperature_degf,tbb_ctd_temperature_degc,tbb_ctd_salinity_ppt,tbb_flntu_chlorophyll_ugpl,tbb_ctd_conductivity_spm,tbb_ctd_density_gpcc,tbb_flntu_turbidity_ntu,tbb_wind_speed_mph,fp_ctd_temperature_degf,fp_ctd_temperature_degc,fp_ctd_salinity_ppt,fp_ctd_fluorescence_raw,fp_ctd_conductivity_spm,fp_ctd_pressure_dbar,fp_ctd_density_gpcc,fp_ctd_transmittance_raw,esrl_met_wind_speed_mph,esrl_met_wind_speed_kts,esrl_met_wind_direction_degn,comp_met_wind_speed_mph,comp_met_wind_direction_degn,datetimelocal";
 
 // tags could be bml or tbb
-function promiseToFetchNewBoon() {
+function promiseToFetchBoon() {
     return fetchJson(BoonUrl)
     .then((json) => {
         console.log('fetched BOON data: '+BoonUrl);
@@ -234,7 +234,7 @@ function promiseToFetchNewBoon() {
         return { bodega: x, boonnoaa: z, tomales: y };
     })
     .catch((err) => {
-        console.log("promiseToFetchNewBoon:" + err);
+        console.log("promiseToFetchBoon:" + err);
     });
 }
 
@@ -269,7 +269,7 @@ function promiseToFetchPoreLt(){
 function promiseFetchMeteo() {	
 	var obs = {};
 	var p = [
-        promiseToFetchNewBoon()
+        promiseToFetchBoon()
         .then((data) => { 
             if(data != null)
             {
@@ -550,7 +550,8 @@ function checkForWind(fc) {
 
 function promiseToFindTideStation(place)
 {
-    return fetch("https://tidesandcurrents.noaa.gov/mdapi/latest/webapi/tidepredstations.json?q="+place).then(res => res.json());
+    var url = "https://tidesandcurrents.noaa.gov/mdapi/latest/webapi/tidepredstations.json?q="+place;
+    return testWrap(url,fetchJson(url));
 }
 
 function promiseToFetchTidePredictions(stationId)
@@ -648,7 +649,7 @@ function requestHandler(request, response) {
   function doForecast(agent,name){
     name = name.toLowerCase();
     var zone = '';
-    if(name=='bodega'||name=='bodega bay'||name=='bodega harbour'||name=='tomales'||name=='dillon'||name=='dillon beach')
+    if(name=='bodega'||name=='bodega bay'||name=='bodega harbor'||name=='tomales'||name=='dillon'||name=='dillon beach')
         zone='pzz540';
     else {
         zone = findIdByName(noaaZones, name);
@@ -705,9 +706,10 @@ function requestHandler(request, response) {
   function doTides(agent,location) {
     console.log("doTides location="+location);
     if(location==='tomales') location='tomales point';
+    if(location==='bodega') location='bodega harbor';
     var promise = promiseToFindTideStation(location)
     .then( (reply) => {
-        console.log("doTides then() ");
+        console.log("doTides got station list ");
         var list = reply.stationList;
         if(!list) 
             agent.add("No matching stations found, try again."); 
@@ -723,11 +725,15 @@ function requestHandler(request, response) {
             var station = list[0];
             return promiseToFetchTidePredictions(station.stationId)
             .then((tides)=>{  
-                var msg = "";
-                try {msg = "Tides for " + station.name.split(',')[0] + ".  ";} catch(e){}
+                var msg = "Tides for ";
+                try {msg += station.name.split(',')[0];} catch(e){ msg+= station.name; }
+                msg += ".  "
                 agent.add(msg + formatTides(station,tides)); 
             })
-            .catch((err)=>{ console.log("doTides.catch " + err); agent.add("No predictions for " + station.name); });
+            .catch((err)=>{ 
+                console.log("doTides.catch " + err); 
+                agent.add("No predictions for " + station.name); 
+            });
         }
     })
     .catch( (err) => { 
