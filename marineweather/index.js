@@ -3,13 +3,12 @@
 // set up webhook request handler (boilerplate code)
 const functions = require('firebase-functions');
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest(requestHandler);
-
 // the requestHandler uses WebhookClient (dialog flow library)
 const {WebhookClient} = require('dialogflow-fulfillment');
 process.env.DEBUG = 'dialogflow:debug'; // enables lib debugging statements
 
 //////////////////////////////////////////////////////////////////////////////////////
-geo
+
 function pad(num, size) {
     var s = "000000000" + num;
     return s.substr(s.length-size);
@@ -55,6 +54,23 @@ function getNextTextElement(jq){
     return null;
 }
 
+// e.g. <div id="tbb_wind_speed_mph">15.96</div>
+function getNumberById($, id)
+{
+    try{
+        var e = $("#"+id);
+        console.log(id + " --->" + e);
+        var txt = e.text();
+        console.log(txt);
+        var n = Number(txt);
+        if(!isNaN(n)) 
+            return n;
+    } catch(ex) {
+        console.log(ex);
+    }
+    return null;
+}
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 const UAs = [
@@ -69,9 +85,15 @@ const node_fetch = require('node-fetch');
 function fetch(url, opt) {
   if(opt == null) opt = {};
   opt.headers = {'User-Agent': UAs[Math.floor(Math.random() * Math.floor(UAs.length))]};
-  return node_fetch(url,opt);
+  return node_fetch(url,opt).then(res => res.text());
 }
 
+function fetchJson(url, opt) {
+    if(opt == null) opt = {};
+    opt.headers = {'User-Agent': UAs[Math.floor(Math.random() * Math.floor(UAs.length))]};
+    return node_fetch(url,opt).then(res => res.json());
+  }
+  
 //////////////////////////////////////////////////////////////////////////////////////
 
 function testWrap(msg,promise) {
@@ -94,7 +116,7 @@ function promiseToFetchGeocode(location)
 {    
     console.log('fetching geocode for '+location);
     const URL = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
-    return fetch(URL+'?f=pjson&singleLine='+location).then(res=>res.json());
+    return fetchJson(URL+'?f=pjson&singleLine='+location);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -116,7 +138,7 @@ function promiseToFetchTidesStationObs(id) {
     url += "&station="+id;
     url += "&product=wind";
     console.log("fetching " + url);
-	return fetch(url).then(res => res.json())
+	return fetchJson(url)
 	.then((js)=>{
 	    console.log('promiseToFetchTidesStationObs got for  '+id);
 	    //{"metadata":{"id":"9415020","name":"Point Reyes","lat":"37.9961","lon":"-122.9767"},
@@ -184,31 +206,13 @@ function promiseToFetchNoaaBuoy(id) {
     });
 }
 
-
 //////////////////////////////////////////////////////////////////////////////////////
-
-// e.g. <div id="tbb_wind_speed_mph">15.96</div>
-function getNumberById($,id)
-{
-    try{
-        var e = $("#"+id);
-        console.log(id + " --->" + e);
-        var txt = e.text();
-        console.log(txt);
-        var n = Number(txt);
-        if(!isNaN(n)) 
-            return n;
-    } catch(ex) {
-        console.log(ex);
-    }
-    return null;
-}
 
 const BoonUrl = "https://boonproducts.ucdavis.edu/cgi-bin/dyn.pl?source=brt2&names=aqm_aqi,aqm_co2_conc_num,bml_met_air_temperature_degf,bml_met_air_temperature_degc,bml_met_wind_speed_mph,bml_met_wind_speed_kts,bml_met_wind_direction_degn,bml_met_barometric_pressure_mbar,bml_met_barometric_pressure_inhg,bml_met_relative_humidity_percent,bml_met_par_units,bml_met_solar_radiation_wpsqm,bml_met_rainfall_lasthour,bml_met_rainfall_last24hours,bml_met_rainfall_last7days,bml_met_rainfall_last30days,bml_met_rainfall_ytd,bml_met_rainfall_sincejul,bml_met_rainfall_sinceoct,bml_met_rainfall_last48hours,bml_met_rainfall_lasthour_percent,bml_met_rainfall_last24hours_percent,bml_met_rainfall_last48hours_percent,bml_met_rainfall_last7days_percent,bml_met_rainfall_last30days_percent,bml_met_rainfall_ytd_percent,bml_met_rainfall_sincejul_percent,bml_met_rainfall_sinceoct_percent,bml_ctd_temperature_degf,bml_ctd_temperature_degc,bml_ctd_salinity_ppt,bml_ctd_density_gpcc,bml_ctd_conductivity_spm,bml_wwqm_temperature_degf,bml_wwqm_temperature_degc,bml_wwqm_salinity_ppt,bml_wwqm_chlorophyll_ugpl,bml_wwqm_oxygen_saturation_units,bml_wwqm_dissolved_oxygen_units,bml_wwqm_turbidity_ntu,bml_wwqm_conductivity_spm,bml_wwqm_water_pressure_dbar,tbb_ctd_temperature_degf,tbb_ctd_temperature_degc,tbb_ctd_salinity_ppt,tbb_flntu_chlorophyll_ugpl,tbb_ctd_conductivity_spm,tbb_ctd_density_gpcc,tbb_flntu_turbidity_ntu,tbb_wind_speed_mph,fp_ctd_temperature_degf,fp_ctd_temperature_degc,fp_ctd_salinity_ppt,fp_ctd_fluorescence_raw,fp_ctd_conductivity_spm,fp_ctd_pressure_dbar,fp_ctd_density_gpcc,fp_ctd_transmittance_raw,esrl_met_wind_speed_mph,esrl_met_wind_speed_kts,esrl_met_wind_direction_degn,comp_met_wind_speed_mph,comp_met_wind_direction_degn,datetimelocal";
 
 // tags could be bml or tbb
 function promiseToFetchNewBoon() {
-    return fetch(BoonUrl).then(res => res.json())
+    return fetchJson(BoonUrl)
     .then((json) => {
         console.log('fetched BOON data: '+BoonUrl);
         var x = {};
@@ -227,7 +231,7 @@ function promiseToFetchNewBoon() {
         z.direction = Number(json.esrl_met_wind_direction_degn);
         z.speed = Number(json.esrl_met_wind_speed_mph);
 
-        return { bodega: x, bodeganoaa: z, tomales: y };
+        return { bodega: x, boonnoaa: z, tomales: y };
     })
     .catch((err) => {
         console.log("promiseToFetchNewBoon:" + err);
@@ -267,16 +271,22 @@ function promiseFetchMeteo() {
 	var p = [
         promiseToFetchNewBoon()
         .then((data) => { 
-            obs.bodega = data.bodega;
-            obs.tomales = data.tomales;
-            obs.bodeganoaa = data.bodeganoaa;
+            if(data != null)
+            {
+                obs.bodega = data.bodega;
+                obs.tomales = data.tomales;
+                obs.boonnoaa = data.boonnoaa;
+            }
         }).catch((err) => {
             console.log(err);
         }),
 		promiseToFetchNoaaBuoy('46013')
 		.then((buoy) => {
-		    obs.bodegabuoy = buoy;
-		    obs.bodegabuoy.name = 'Bodega Buoy';
+            if(buoy != null)
+            {
+                obs.bodegabuoy = buoy;
+                obs.bodegabuoy.name = 'Bodega Buoy';
+            }
 		}).catch((err) => {
             console.log(err);
         }),
@@ -349,9 +359,8 @@ function formatObservation(obs,full){
 function promiseFetchFormattedObservations(agent) {
     return promiseFetchMeteo().then((obs)=>{
         console.log('promiseFetchFormattedObservations');
-        var s;
+        var s = "";
         if(obs) {
-            s = "observations : " ;
             if(obs.bodega) s += formatObservation(obs.bodega);
             if(obs.boonnoaa) s += formatObservation(obs.boonnoaa);
             if(obs.tomales) s += formatObservation(obs.tomales);
@@ -472,7 +481,7 @@ function promiseToFetchNWSForecast(location) {
 	//"https://marine.weather.gov/MapClick.php?unit=0&lg=english&FcstType=text&TextType=1&zoneid=pzz540"
 	//"https://marine.weather.gov/MapClick.php?"+spec;
     console.log("fetching " +url);
-	return rp(url)
+	return fetch(url)
 	.then((html)=>{
         console.log("fetched forecaset: " + html);
 		return nws2json(html);
@@ -502,24 +511,31 @@ function formatForecast(fc, short) {
 
 //////////////////////////////////////////////////////////////////////////////////////
 
+function checkForWindFormatForecast(fc,onlyfirst2){
+    var s = "";
+    if(typeof fc.advisory === 'string' && fc.advisory !== '') {
+        s += "There is " + fc.advisory + '. ';
+    }
+    var a = fc.forecasts;
+    var n = onlyfirst2 ? 2 : a.length;
+    for(var i = 0; i < n; i++) {
+        var range = a[i].match(/(\d*)\s*to\s*(\d*)\s*knots/);
+        if(range && range[2] > 15) {
+            var when = a[i].match(/^([a-zA-Z ]*):/);
+            if(when) s += when[1] + " ";
+            s += 'up to ' + range[2] + ' knots. ';
+        }
+    }
+    return s;
+}
+
 function checkForWind(fc) {
     if(!fc) {
         return 'empty forecast';
     }
     var s = '';
     try {
-        if(typeof fc.advisory === 'string' && fc.advisory !== '') {
-            s += "There is " + fc.advisory + '. ';
-        }
-        var a = fc.forecasts;
-        for(var i = 0; i < a.length; i++) {
-            var range = a[i].match(/(\d*)\s*to\s*(\d*)\s*knots/);
-            if(range && range[2] > 15) {
-                var when = a[i].match(/^([a-zA-Z ]*):/);
-                if(when) s += when[1] + " ";
-                s += 'up to ' + range[2] + ' knots. ';
-            }
-        }
+        s = checkForWindFormatForecast(fc);
         if(s!=='')  s = 'YES! '+s; else s = "Nope! Nothing in the next few days.";
     }
     catch (ex) {
@@ -534,7 +550,7 @@ function checkForWind(fc) {
 
 function promiseToFindTideStation(place)
 {
-    return rp({uri: "https://tidesandcurrents.noaa.gov/mdapi/latest/webapi/tidepredstations.json?q="+place, json: true});
+    return fetch("https://tidesandcurrents.noaa.gov/mdapi/latest/webapi/tidepredstations.json?q="+place).then(res => res.json());
 }
 
 function promiseToFetchTidePredictions(stationId)
@@ -544,7 +560,7 @@ function promiseToFetchTidePredictions(stationId)
     url += "&station="+stationId;
     url += "&date=today";
     url += '&datum=MLLW&time_zone=lst_ldt&units=english&interval=hilo&format=json';
-    return testWrap(url,rp({uri: url, json: true}));
+    return testWrap(url,fetchJson(url));
 }
 
 function formatTideItem(item) {
@@ -556,13 +572,11 @@ function formatTideItem(item) {
 
 function formatTides(station, preds) {
     var msg = "";  
-    try {msg = "Tides for " + station.name.split(',')[0] + ".  ";} catch(e){}
     try {
     if(preds.predictions) 
         preds.predictions.forEach((p)=>{ msg += formatTideItem(p); });
     } catch(e)  {
       console.log("formatTides error: " + e);
-      msg += "no predictions!";
     }  
     return msg;
 }
@@ -606,7 +620,9 @@ function findIdByName(map, str) {
 // replies to requests from dialogflow webfulfilment
 function requestHandler(request, response) {
 
-  console.log('DFRQ from ' + request.headers.host);
+  console.log('DialogFlow RQ from ' + request.headers.host);
+  console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
+  console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
 
   const agent = new WebhookClient({ request, response });
 
@@ -621,7 +637,8 @@ function requestHandler(request, response) {
         `Carefull! water is very wet today!`, 
         "Yo! Do you want to go sailing?",
         "Is it a great day to go sailing?",
-        "Ahoy Mate!"]));
+        "Ahoy Mate!",
+        "It may be a great day to go sailing!"]));
   }
      
   function fallback(agent) {
@@ -659,6 +676,7 @@ function requestHandler(request, response) {
             agent.add(txt);
         })
         .catch((err)=> { 
+            agent.add("Sorry, crashed.");
             console.log('observations:' + err); 
         });
     else
@@ -666,18 +684,18 @@ function requestHandler(request, response) {
   }
  
   function summery(agent) {
-    var ftxt,otxt, ttxt;
+    var ftxt, otxt, ttxt;
     var p = [ 
         promiseFetchFormattedObservations()
         .then((txt)=>{ otxt = txt; })
-        .catch((err)=>{ otxt = "No meto information."; console.log("summery/meteo: " + err); }),
+        .catch((err)=>{ otxt = "No meteo information."; console.log("summery/meteo: " + err); }),
         promiseToFetchNWSForecast('pzz540')
-        .then((fc) => { ftxt = formatForecast(fc, true); })
+        .then((fc) => { ftxt = checkForWindFormatForecast(fc,true); })
         .catch((err)=>{ ftxt = "No forcast information."; console.log("summery/forecast: " + err); }),
         promiseToFetchTidePredictions('9415469')
         .then((t)=>{
             console.log("fetched tides for summery: " + t );
-            ttxt = formatTides({name:"Tomales Bay Entrance", stationid:'9415469'},t); 
+            ttxt = "Tide " + formatTides({name:"Tomales Bay Entrance", stationid:'9415469'},t); 
         })
         .catch((err)=>{ ttxt = " No tides information."; console.log("summery/tides: "+err); })
     ];
@@ -704,7 +722,11 @@ function requestHandler(request, response) {
         else if(list.length==1) {
             var station = list[0];
             return promiseToFetchTidePredictions(station.stationId)
-            .then((tides)=>{ agent.add(formatTides(station,tides)); })
+            .then((tides)=>{  
+                var msg = "";
+                try {msg = "Tides for " + station.name.split(',')[0] + ".  ";} catch(e){}
+                agent.add(msg + formatTides(station,tides)); 
+            })
             .catch((err)=>{ console.log("doTides.catch " + err); agent.add("No predictions for " + station.name); });
         }
     })
@@ -818,13 +840,6 @@ function requestHandler(request, response) {
   
   // Run the proper function handler based on the matched Dialogflow intent name
   let intentMap = new Map();const fetch = require('node-fetch');
-
-  function rp(url, opt) {
-    if(opt == null) opt = {};
-    opt.headers = {'User-Agent': UA};
-    return fetch(url,opt);
-  }
-  
   intentMap.set('zoneforecastfor', zoneforecastfor);
   intentMap.set('forecastfor', forecastfor);
   intentMap.set('forecast', forecast);
@@ -834,5 +849,6 @@ function requestHandler(request, response) {
   intentMap.set('observations', observations);
   intentMap.set('noaabuoy', noaabuoy);
   intentMap.set('willitbewindy', willitbewindy);
+  intentMap.set('summery', summery);
   return agent.handleRequest(intentMap);
 }
